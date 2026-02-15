@@ -1,0 +1,71 @@
+name: Build Desktop Client
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: TamrielAuctionHouse-Windows
+            ext: .exe
+          - os: macos-latest
+            artifact: TamrielAuctionHouse-macOS
+            ext: ""
+          - os: ubuntu-latest
+            artifact: TamrielAuctionHouse-Linux
+            ext: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pyinstaller
+
+      - name: Build executable
+        working-directory: desktop-client
+        run: pyinstaller --onefile --name "TamrielAuctionHouse" --add-data "client.py${{ matrix.os == 'windows-latest' && ';.' || ':.' }}" gui.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: desktop-client/dist/TamrielAuctionHouse${{ matrix.ext }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Rename files
+        run: |
+          mv TamrielAuctionHouse-Windows/TamrielAuctionHouse.exe ./TamrielAuctionHouse-Windows.exe
+          mv TamrielAuctionHouse-macOS/TamrielAuctionHouse ./TamrielAuctionHouse-macOS
+          mv TamrielAuctionHouse-Linux/TamrielAuctionHouse ./TamrielAuctionHouse-Linux
+          chmod +x TamrielAuctionHouse-macOS TamrielAuctionHouse-Linux
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            TamrielAuctionHouse-Windows.exe
+            TamrielAuctionHouse-macOS
+            TamrielAuctionHouse-Linux
