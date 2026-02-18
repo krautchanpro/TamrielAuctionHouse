@@ -12,6 +12,7 @@ Sync your in-game listings with the Tamriel Auction House server. This app runs 
    - **Mac:** `Documents/Elder Scrolls Online/live/AddOns/`
    - **Linux (Steam):** `~/.steam/steam/steamapps/compatdata/306130/pfx/drive_c/users/steamuser/Documents/Elder Scrolls Online/live/AddOns/`
 3. Log into ESO and make sure the addon is enabled in the Add-Ons menu
+4. Do /ah to open the Tamriel Auction House UI
 
 ### Step 2: Install the Desktop Client
 
