@@ -2,6 +2,12 @@
 
 Sync your in-game listings with the Tamriel Auction House server. This app runs in the background while you play ESO.
 
+<img width="1410" height="720" alt="Ingame TAH" src="https://github.com/user-attachments/assets/9e6c66d9-f69b-47f1-9c4e-2600ce034050" />
+
+<img width="1598" height="597" alt="TAH website" src="https://github.com/user-attachments/assets/6e1eb51a-988a-4e7d-bf6d-113a7568bd90" />
+
+
+
 ## Installation
 
 ### Step 1: Install the ESO Addon
