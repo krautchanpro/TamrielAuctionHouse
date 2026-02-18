@@ -471,8 +471,10 @@ class TAHClientGUI:
         tk.Label(content, text=f"Buyer: {buyer}",
                  font=("Arial", 11), fg="#AAAAAA", bg="#1a1a2e").pack(anchor="w", pady=(2, 0))
 
-        tk.Label(content, text="Send them a COD to complete the sale!",
+        tk.Label(content, text="Type /reloadui in ESO to see it in your COD Queue,",
                  font=("Arial", 10, "italic"), fg="#66BB6A", bg="#1a1a2e").pack(anchor="w", pady=(10, 0))
+        tk.Label(content, text="then send them a COD to complete the sale!",
+                 font=("Arial", 10, "italic"), fg="#66BB6A", bg="#1a1a2e").pack(anchor="w")
 
         # Dismiss button
         btn_frame = tk.Frame(popup, bg="#1a1a2e", pady=8)

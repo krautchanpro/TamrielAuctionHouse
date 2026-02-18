@@ -479,6 +479,7 @@ class SyncEngine:
         self.running = False
         self.stats = {"pushes": 0, "pulls": 0, "errors": 0, "listings_synced": 0}
         self._synced_listing_ids = set()  # Track listings already on the server
+        self._cached_listings = {}        # Local cache of all server listings (for delta sync)
         self._pushed_action_ids = set()   # Track action queue items already pushed
         self._pending_action_ids = []     # Temp list for current push cycle
         self._initial_sync_done = False   # Skip action queue on first run
@@ -724,7 +725,11 @@ class SyncEngine:
             self._pending_action_ids.clear()
 
     def pull_incoming(self):
-        """Pull listings and notifications from server, write to SavedVariables."""
+        """Pull listings and notifications from server, write to SavedVariables.
+
+        Supports delta sync: on subsequent pulls, only changed listings are
+        returned. The client merges them into its cached state.
+        """
         try:
             result = self.api.sync_pull(since=self.last_sync_time)
         except requests.exceptions.RequestException as e:
@@ -734,42 +739,43 @@ class SyncEngine:
 
         listings = result.get("listings", [])
         purchases = result.get("purchases", [])
+        buyer_purchases = result.get("buyer_purchases", [])
         notifications = result.get("notifications", [])
+        removed_ids = result.get("removed_ids", [])
+        is_full_sync = result.get("is_full_sync", True)
         self.last_sync_time = result.get("server_time")
 
-        # Convert server listings to addon-compatible format
+        if is_full_sync:
+            # Full sync — replace entire listing cache
+            self._cached_listings = {}
+            for listing in listings:
+                lid = listing["id"]
+                self._synced_listing_ids.add(lid)
+                self._cached_listings[lid] = self._listing_to_addon(listing)
+        else:
+            # Delta sync — merge updates into existing cache
+            if not hasattr(self, '_cached_listings'):
+                self._cached_listings = {}
+            # Add/update changed listings
+            for listing in listings:
+                lid = listing["id"]
+                self._synced_listing_ids.add(lid)
+                self._cached_listings[lid] = self._listing_to_addon(listing)
+            # Remove sold/cancelled/expired listings
+            for rid in removed_ids:
+                self._cached_listings.pop(rid, None)
+                self._synced_listing_ids.discard(rid)
+
+        # Convert cached listings to addon-compatible format
         incoming_data = {
-            "ah_listings": {},
-            "ah_purchases": purchases,  # Server provides these directly
+            "ah_listings": dict(self._cached_listings),
+            "ah_purchases": purchases,
+            "ah_buyer_purchases": buyer_purchases,
             "ah_notifications": [],
             "sync_time": self.last_sync_time,
             "is_connected": True,
-            "total_listings": len(listings),
+            "total_listings": len(self._cached_listings),
         }
-
-        for listing in listings:
-            lid = listing["id"]
-            # Track that this listing is already on the server
-            self._synced_listing_ids.add(lid)
-            incoming_data["ah_listings"][lid] = {
-                "id": lid,
-                "itemLink": listing.get("item_link", ""),
-                "itemName": listing.get("item_name", ""),
-                "itemId": listing.get("item_id", ""),
-                "icon": listing.get("icon", ""),
-                "quality": listing.get("quality", 0),
-                "level": listing.get("level", 0),
-                "championPoints": listing.get("champion_points", 0),
-                "quantity": listing.get("quantity", 1),
-                "price": listing.get("price", 0),
-                "unitPrice": listing.get("unit_price", 0),
-                "seller": listing.get("seller", ""),
-                "sellerOnline": listing.get("seller_online", False),
-                "buyer": listing.get("buyer"),
-                "state": listing.get("state", "listed"),
-                "expiresAt": int(time.time()) + listing.get("time_remaining", 0),
-                "timeRemaining": listing.get("time_remaining", 0),
-            }
 
         # Process notifications (for addon-side handling)
         for notif in notifications:
@@ -797,10 +803,35 @@ class SyncEngine:
         )
 
         self.stats["pulls"] += 1
-        self.stats["listings_synced"] = len(listings)
+        self.stats["listings_synced"] = len(self._cached_listings)
 
-        log.info("Pulled %d listings, %d purchases, %d notifications",
-                 len(listings), len(purchases), len(notifications))
+        sync_type = "full" if is_full_sync else f"delta (+{len(listings)}, -{len(removed_ids)})"
+        log.info("Pulled %s: %d total listings, %d purchases, %d notifications",
+                 sync_type, len(self._cached_listings), len(purchases), len(notifications))
+
+    @staticmethod
+    def _listing_to_addon(listing: dict) -> dict:
+        """Convert a server listing to addon-compatible format."""
+        lid = listing["id"]
+        return {
+            "id": lid,
+            "itemLink": listing.get("item_link", ""),
+            "itemName": listing.get("item_name", ""),
+            "itemId": listing.get("item_id", ""),
+            "icon": listing.get("icon", ""),
+            "quality": listing.get("quality", 0),
+            "level": listing.get("level", 0),
+            "championPoints": listing.get("champion_points", 0),
+            "quantity": listing.get("quantity", 1),
+            "price": listing.get("price", 0),
+            "unitPrice": listing.get("unit_price", 0),
+            "seller": listing.get("seller", ""),
+            "sellerOnline": listing.get("seller_online", False),
+            "buyer": listing.get("buyer"),
+            "state": listing.get("state", "listed"),
+            "expiresAt": int(time.time()) + listing.get("time_remaining", 0),
+            "timeRemaining": listing.get("time_remaining", 0),
+        }
 
     def _find_nested(self, data: dict, key: str):
         """Find a key in a potentially nested SavedVariables structure."""
