@@ -689,14 +689,14 @@ class SyncEngine:
                             },
                             "created_at": "",
                         })
-                elif r.get("status") == "already_sold":
+                elif r.get("status") in ("already_sold", "purchase_failed"):
                     original = action_list[i] if i < len(action_list) else {}
                     data = original.get("data", {})
                     failed_notifications.append({
                         "type": "purchase_failed",
                         "listing_id": r.get("id", ""),
                         "data": {
-                            "reason": "This item was already purchased by another buyer.",
+                            "reason": r.get("reason", "This item was already purchased by another buyer."),
                             "item_name": data.get("itemName", "Unknown"),
                         },
                         "created_at": "",
