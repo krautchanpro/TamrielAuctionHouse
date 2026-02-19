@@ -160,7 +160,41 @@ class TAHClientGUI:
         bottom = ttk.Frame(self.root, padding=(15, 0, 15, 8))
         bottom.pack(fill=tk.X)
         tk.Label(bottom, text="Minimize this window — it will keep syncing in the background.",
-                 font=("Arial", 8), fg="#999999").pack(anchor="w")
+                 font=("Arial", 8), fg="#999999").pack(side=tk.LEFT, anchor="w")
+        ttk.Button(bottom, text="Change ESO Folder",
+                   command=self._change_eso_folder).pack(side=tk.RIGHT)
+
+    def _change_eso_folder(self):
+        """Let the user pick a new ESO directory."""
+        current = self.config.get("eso_dir", "")
+        new_dir = filedialog.askdirectory(
+            title="Select your Elder Scrolls Online folder",
+            initialdir=current if os.path.isdir(current) else str(Path.home()),
+        )
+        if not new_dir:
+            return
+
+        # Validate — should contain a SavedVariables folder or be a parent of one
+        sv_path = Path(new_dir) / "SavedVariables"
+        live_sv = Path(new_dir) / "live" / "SavedVariables"
+        if not sv_path.exists() and not live_sv.exists():
+            result = messagebox.askyesno(
+                "No SavedVariables Found",
+                f"No SavedVariables folder found in:\n{new_dir}\n\n"
+                "This might not be the correct ESO folder.\n"
+                "Use this folder anyway?")
+            if not result:
+                return
+
+        old_dir = self.config.get("eso_dir", "")
+        self.config["eso_dir"] = new_dir
+        self._save_config()
+        self._log(f"ESO folder changed: {new_dir}")
+
+        if old_dir != new_dir and self.engine:
+            messagebox.showinfo(
+                "Restart Required",
+                "ESO folder changed. Please restart the desktop client for the change to take effect.")
 
     def _refresh_sales(self):
         """Fetch and display sales history from server."""
