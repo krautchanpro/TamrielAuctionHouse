@@ -6,13 +6,16 @@ Sync your in-game listings with the Tamriel Auction House server. This app runs 
 
 <img width="1598" height="597" alt="TAH website" src="https://github.com/user-attachments/assets/6e1eb51a-988a-4e7d-bf6d-113a7568bd90" />
 
+<img width="549" height="508" alt="desktop app" src="https://github.com/user-attachments/assets/d56be715-3a81-40d9-b6af-5352ed60d835" />
+
+<img width="549" height="508" alt="desktop app sale history" src="https://github.com/user-attachments/assets/40e6053f-3e95-43d1-a15d-df92d3e98253" />
 
 
 ## Installation
 
 ### Step 1: Install the ESO Addon
 
-1. Download the latest addon files from the [Releases](https://www.esoui.com/downloads/info4394-TamrielAuctionHouse.html) page
+1. Download the latest addon files from [ESOUI.com](https://www.esoui.com/downloads/info4394-TamrielAuctionHouse.html) page
 2. Extract the `AuctionHouse` folder to your ESO AddOns directory:
    - **Windows:** `Documents\Elder Scrolls Online\live\AddOns\`
    - **Mac:** `Documents/Elder Scrolls Online/live/AddOns/`
@@ -23,7 +26,7 @@ Sync your in-game listings with the Tamriel Auction House server. This app runs 
 
 ### Step 2: Install the Desktop Client
 
-1. Go to the [Releases](https://github.com/krautchanpro/TamrielAuctionHouse/releases) page or extract the desktop client from the file downloaded on the ESOUI page
+1. Go to the [Releases page on github](https://github.com/krautchanpro/TamrielAuctionHouse/releases) or extract the desktop client from the file downloaded on the ESOUI page
 2. Download the file for your operating system:
    - **Windows:** `TamrielAuctionHouse-Windows.exe`
    - **Mac:** `TamrielAuctionHouse-macOS`
