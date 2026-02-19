@@ -12,7 +12,7 @@ Sync your in-game listings with the Tamriel Auction House server. This app runs 
 
 ### Step 1: Install the ESO Addon
 
-1. Download the latest addon files from the [Releases](https://github.com/krautchanpro/TamrielAuctionHouse/releases) page
+1. Download the latest addon files from the [Releases](https://www.esoui.com/downloads/info4394-TamrielAuctionHouse.html) page
 2. Extract the `AuctionHouse` folder to your ESO AddOns directory:
    - **Windows:** `Documents\Elder Scrolls Online\live\AddOns\`
    - **Mac:** `Documents/Elder Scrolls Online/live/AddOns/`
@@ -23,7 +23,7 @@ Sync your in-game listings with the Tamriel Auction House server. This app runs 
 
 ### Step 2: Install the Desktop Client
 
-1. Go to the [Releases](https://github.com/krautchanpro/TamrielAuctionHouse/releases) page
+1. Go to the [Releases](https://github.com/krautchanpro/TamrielAuctionHouse/releases) page or extract the desktop client from the file downloaded on the ESOUI page
 2. Download the file for your operating system:
    - **Windows:** `TamrielAuctionHouse-Windows.exe`
    - **Mac:** `TamrielAuctionHouse-macOS`
