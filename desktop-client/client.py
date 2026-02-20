@@ -418,10 +418,14 @@ class APIClient:
         resp = self.session.get(f"{self.server_url}/api/v1/health", timeout=5)
         return resp.json()
 
-    def register(self, player_name: str, megaserver: str = "NA") -> dict:
+    def register(self, player_name: str, megaserver: str = "NA", old_api_key: str = "") -> dict:
+        headers = {}
+        if old_api_key:
+            headers["X-API-Key"] = old_api_key
         resp = self.session.post(
             f"{self.server_url}/api/v1/auth/register",
-            json={"player_name": player_name, "megaserver": megaserver}, timeout=10)
+            json={"player_name": player_name, "megaserver": megaserver},
+            headers=headers, timeout=10)
         resp.raise_for_status()
         return resp.json()
 
@@ -501,7 +505,8 @@ class SyncEngine:
         log.info("Registering player: %s", self.player_name)
         megaserver = self._detect_megaserver()
         log.info("Detected megaserver: %s", megaserver)
-        result = self.api.register(self.player_name, megaserver)
+        old_key = self.config.get("api_key", "")
+        result = self.api.register(self.player_name, megaserver, old_api_key=old_key)
         self.config["api_key"] = result["api_key"]
         self.config["account_name"] = self.player_name
         self.config["megaserver"] = megaserver
