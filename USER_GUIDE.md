@@ -9,7 +9,9 @@ It consists of three parts that work together:
 - **The ESO Addon** — An in-game interface for browsing, buying, listing, and managing your trades
 - **The Desktop Client** — A small background app that syncs your addon data with the central server
 - **The Web Dashboard** — A browser-based view of all active listings at tamriel-ah.org
-
+- 
+# Additional Addon Requirements
+LibCustomMenu, FCO Item Saver
 ---
 
 ## Getting Started
