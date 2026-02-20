@@ -2,13 +2,11 @@
 
 Sync your in-game listings with the Tamriel Auction House server. This app runs in the background while you play ESO.
 
-<img width="1410" height="720" alt="Ingame TAH" src="https://github.com/user-attachments/assets/9e6c66d9-f69b-47f1-9c4e-2600ce034050" />
+<img width="1592" height="717" alt="Ingame TAH" src="https://github.com/user-attachments/assets/1bbcd256-fb10-40ff-b221-895f91aa5061" />
+<img width="1186" height="333" alt="TAH website" src="https://github.com/user-attachments/assets/06484928-3dfd-4b9f-83f1-3eeb97274096" />
+<img width="556" height="512" alt="desktop app" src="https://github.com/user-attachments/assets/4f0cc48d-5421-401c-a290-ef635e35fdd8" />
+<img width="551" height="506" alt="desktop app sale history" src="https://github.com/user-attachments/assets/d31b091a-08bf-471d-bbd9-1768206e84d2" />
 
-<img width="1598" height="597" alt="TAH website" src="https://github.com/user-attachments/assets/6e1eb51a-988a-4e7d-bf6d-113a7568bd90" />
-
-<img width="549" height="508" alt="desktop app" src="https://github.com/user-attachments/assets/d56be715-3a81-40d9-b6af-5352ed60d835" />
-
-<img width="549" height="508" alt="desktop app sale history" src="https://github.com/user-attachments/assets/40e6053f-3e95-43d1-a15d-df92d3e98253" />
 
 
 ## Installation
