@@ -466,6 +466,15 @@ class APIClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get(self, endpoint: str, params: Optional[dict] = None) -> dict:
+        """Generic GET request to any API endpoint."""
+        resp = self.session.get(
+            f"{self.server_url}/api/v1/{endpoint}",
+            params=params or {},
+            timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
 
 # ---------------------------------------------------------------------------
 #  Sync Engine
@@ -781,6 +790,42 @@ class SyncEngine:
             "is_connected": True,
             "total_listings": len(self._cached_listings),
         }
+
+        # Include feature data from server response
+        if "watchlist" in result:
+            incoming_data["ah_watchlist"] = result["watchlist"]
+        if "trusted_sellers" in result:
+            incoming_data["ah_trusted_sellers"] = result["trusted_sellers"]
+        if "sale_stats" in result:
+            incoming_data["ah_sale_stats"] = result["sale_stats"]
+
+        # Fetch deals separately (lightweight call)
+        try:
+            deals_result = self.api.get("deals", params={"limit": 20})
+            if deals_result and "deals" in deals_result:
+                incoming_data["ah_deals"] = deals_result["deals"]
+        except Exception as e:
+            log.debug("Deals fetch failed (non-critical): %s", e)
+
+        # Fetch seller ratings for sellers in current listings
+        try:
+            sellers = set()
+            for listing in incoming_data.get("ah_listings", []):
+                seller = listing.get("seller", "")
+                if seller:
+                    sellers.add(seller)
+            seller_ratings = {}
+            for seller_name in list(sellers)[:50]:  # Limit to 50 sellers
+                try:
+                    rating = self.api.get(f"seller/{seller_name}/rating")
+                    if rating and rating.get("total_sales", 0) > 0:
+                        seller_ratings[seller_name] = rating
+                except Exception:
+                    pass
+            if seller_ratings:
+                incoming_data["ah_seller_ratings"] = seller_ratings
+        except Exception as e:
+            log.debug("Seller ratings fetch failed (non-critical): %s", e)
 
         # Process notifications (for addon-side handling)
         for notif in notifications:
