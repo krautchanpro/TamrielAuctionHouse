@@ -15,7 +15,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
-from client import SyncEngine, APIClient, SavedVarsManager, detect_eso_dir, load_config, save_config, safe_write_text
+from client import SyncEngine, APIClient, SavedVarsManager, detect_eso_dir, load_config, save_config, safe_write_text, safe_read_text
 
 APP_NAME = "Tamriel Auction House"
 SERVER_URL = "https://tamriel-ah.org"
@@ -82,6 +82,39 @@ class TAHClientGUI:
 
     def _save_config(self):
         safe_write_text(Path(self._config_path()), json.dumps(self.config, indent=2))
+        # Backup API key to ESO directory (outside OneDrive config path)
+        self._backup_api_key()
+
+    def _backup_api_key(self):
+        """Save API key to a backup file inside the ESO SavedVariables dir."""
+        api_key = self.config.get("api_key", "")
+        eso_dir = self.config.get("eso_dir", "")
+        if not api_key or not eso_dir:
+            return
+        try:
+            backup_dir = Path(eso_dir) / "SavedVariables"
+            if backup_dir.exists():
+                backup_file = backup_dir / ".tah_key_backup"
+                safe_write_text(backup_file, json.dumps({
+                    "api_key": api_key,
+                    "account_name": self.config.get("account_name", ""),
+                }))
+        except Exception:
+            pass  # Best effort
+
+    def _restore_api_key(self):
+        """Try to restore API key from backup if config is missing it."""
+        eso_dir = self.config.get("eso_dir", "")
+        if not eso_dir:
+            return ""
+        try:
+            backup_file = Path(eso_dir) / "SavedVariables" / ".tah_key_backup"
+            if backup_file.exists():
+                data = json.loads(safe_read_text(backup_file))
+                return data.get("api_key", "")
+        except Exception:
+            pass
+        return ""
 
     # -----------------------------------------------------------------------
     #  UI — minimal, just status + log
@@ -185,6 +218,7 @@ class TAHClientGUI:
         bottom.pack(fill=tk.X)
         tk.Label(bottom, text="Minimize this window — it will keep syncing in the background.",
                  font=("Arial", 8), fg="#999999").pack(side=tk.LEFT, anchor="w")
+        ttk.Button(bottom, text="Copy API Key", command=self._copy_api_key).pack(side=tk.RIGHT)
         ttk.Button(bottom, text="Change ESO Folder",
                    command=self._change_eso_folder).pack(side=tk.RIGHT)
 
@@ -426,6 +460,19 @@ class TAHClientGUI:
         self.log_text.see(tk.END)
         self.log_text.configure(state=tk.DISABLED)
 
+    def _copy_api_key(self):
+        api_key = self.config.get("api_key", "")
+        if not api_key:
+            messagebox.showinfo("No API Key", "No API key found. Connect to the server first.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(api_key)
+        self._log("API key copied to clipboard. Save it somewhere safe!")
+        messagebox.showinfo("API Key Copied",
+            "Your API key has been copied to the clipboard.\n\n"
+            "Save it somewhere safe — you'll need it if you\n"
+            "reinstall the client or lose your config file.")
+
     def _set_status(self, text, color="#888888"):
         self.status_var.set(text)
         self.status_icon.configure(fg=color)
@@ -482,6 +529,15 @@ class TAHClientGUI:
 
         self._log("Server connected!")
 
+        # 3.5. If API key is missing, try to restore from backup
+        if not self.config.get("api_key"):
+            restored = self._restore_api_key()
+            if restored:
+                self._log("Restored API key from backup.")
+                self.config["api_key"] = restored
+                self.engine.config["api_key"] = restored
+                self._save_config()
+
         # 4. Register / authenticate
         try:
             self.engine.ensure_registered()
@@ -501,6 +557,12 @@ class TAHClientGUI:
                 self._log(f"Rate limited by server. Retrying in 2 minutes...")
                 self._set_status("Rate limited — waiting", "#cc8800")
                 self.root.after(120000, self._auto_start)
+            elif "409" in err_str:
+                self._log("Too many re-registration attempts.")
+                self._log("Try again in 24 hours, or contact the server admin.")
+                self._set_status("Re-registration limit — wait 24h", "#cc0000")
+                # Don't retry — user hit the limit
+                return
             else:
                 self._log(f"Registration failed: {e}. Retrying in 30s...")
                 self._set_status("Auth failed — retrying", "#cc0000")
