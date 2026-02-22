@@ -27,7 +27,7 @@ class TAHClientGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(f"{APP_NAME} v{VERSION}")
-        self.root.geometry("550x480")
+        self.root.geometry("550x520")
         self.root.resizable(False, False)
 
         self.engine = None
@@ -57,6 +57,16 @@ class TAHClientGUI:
             with open(config_path) as f:
                 config = json.load(f)
             config["server_url"] = SERVER_URL
+
+            # Migrate old single-account config to multi-account format
+            if "accounts" not in config and config.get("account_name"):
+                config["accounts"] = [{
+                    "name": config["account_name"],
+                    "eso_dir": config.get("eso_dir", ""),
+                    "api_key": config.get("api_key", ""),
+                }]
+                config["active_account"] = 0
+
             return config
         return {
             "server_url": SERVER_URL,
@@ -66,6 +76,8 @@ class TAHClientGUI:
             "sync_interval": 5,
             "addon_name": "AuctionHouse",
             "saved_vars_name": "AuctionHouse",
+            "accounts": [],
+            "active_account": 0,
         }
 
     def _save_config(self):
@@ -83,6 +95,19 @@ class TAHClientGUI:
         header.pack_propagate(False)
         tk.Label(header, text=f"⚔  {APP_NAME}", font=("Arial", 14, "bold"),
                  fg="#FFD700", bg="#1a1a2e").pack(pady=10)
+
+        # Account selector
+        acct_frame = ttk.Frame(self.root, padding=(15, 5, 15, 0))
+        acct_frame.pack(fill=tk.X)
+        tk.Label(acct_frame, text="Account:", font=("Arial", 9)).pack(side=tk.LEFT)
+        self.account_var = tk.StringVar()
+        self.account_combo = ttk.Combobox(acct_frame, textvariable=self.account_var,
+                                          state="readonly", width=28, font=("Arial", 9))
+        self.account_combo.pack(side=tk.LEFT, padx=(6, 6))
+        self.account_combo.bind("<<ComboboxSelected>>", self._on_account_switch)
+        ttk.Button(acct_frame, text="Add Account", command=self._add_account).pack(side=tk.LEFT)
+        ttk.Button(acct_frame, text="Remove", command=self._remove_account).pack(side=tk.LEFT, padx=(4, 0))
+        self._refresh_account_list()
 
         # Status area
         status_frame = ttk.Frame(self.root, padding=10)
@@ -163,6 +188,158 @@ class TAHClientGUI:
                  font=("Arial", 8), fg="#999999").pack(side=tk.LEFT, anchor="w")
         ttk.Button(bottom, text="Change ESO Folder",
                    command=self._change_eso_folder).pack(side=tk.RIGHT)
+
+    def _refresh_account_list(self):
+        """Update the account dropdown from config."""
+        accounts = self.config.get("accounts", [])
+        names = [a.get("name", "Unknown") for a in accounts]
+        if not names:
+            names = ["(no accounts)"]
+        self.account_combo["values"] = names
+        active = self.config.get("active_account", 0)
+        if active < len(names):
+            self.account_combo.current(active)
+        elif names:
+            self.account_combo.current(0)
+
+    def _get_active_account(self):
+        """Get the active account dict, or None."""
+        accounts = self.config.get("accounts", [])
+        idx = self.config.get("active_account", 0)
+        if 0 <= idx < len(accounts):
+            return accounts[idx]
+        return None
+
+    def _apply_account_to_config(self):
+        """Copy active account fields into top-level config for SyncEngine."""
+        acct = self._get_active_account()
+        if acct:
+            self.config["account_name"] = acct.get("name", "")
+            self.config["eso_dir"] = acct.get("eso_dir", "")
+            self.config["api_key"] = acct.get("api_key", "")
+
+    def _on_account_switch(self, event=None):
+        """Handle account dropdown selection change."""
+        idx = self.account_combo.current()
+        accounts = self.config.get("accounts", [])
+        if idx < 0 or idx >= len(accounts):
+            return
+        if idx == self.config.get("active_account", 0):
+            return  # Same account, no change
+
+        self.config["active_account"] = idx
+        self._apply_account_to_config()
+        self._save_config()
+        self._log(f"Switched to account: {accounts[idx].get('name', '?')}")
+
+        # Restart sync with new account
+        self.running = False
+        if self.sync_thread and self.sync_thread.is_alive():
+            self.sync_thread.join(timeout=3)
+        self.engine = None
+        self._set_status("Switching account...", "#cc8800")
+        self.root.after(500, self._auto_start)
+
+    def _add_account(self):
+        """Add a new ESO account."""
+        # Ask for the ESO directory
+        d = filedialog.askdirectory(
+            title="Select ESO folder for this account (e.g. .../Elder Scrolls Online/live)")
+        if not d:
+            return
+
+        sv_dir = Path(d) / "SavedVariables"
+        if not sv_dir.exists():
+            messagebox.showerror("Invalid Folder",
+                "No SavedVariables folder found. Make sure you select the\n"
+                "'live' folder inside your Elder Scrolls Online directory.")
+            return
+
+        # Detect account name from SavedVariables
+        import re
+        acct_name = ""
+        for lua_file in sv_dir.glob("*.lua"):
+            try:
+                content = lua_file.read_text(encoding="utf-8", errors="replace")
+                matches = re.findall(r'\["(@[^"]+)"\]', content)
+                for match in matches:
+                    if match.startswith("@") and len(match) > 2:
+                        acct_name = match
+                        break
+                if acct_name:
+                    break
+            except Exception:
+                continue
+
+        if not acct_name:
+            acct_name = messagebox.askstring("Account Name",
+                "Could not detect account name.\nEnter your ESO account name (e.g. @YourName):",
+                parent=self.root) or ""
+            if not acct_name:
+                return
+
+        # Check for duplicates
+        accounts = self.config.get("accounts", [])
+        for existing in accounts:
+            if existing.get("name", "").lower() == acct_name.lower():
+                messagebox.showinfo("Already Added",
+                    f"Account {acct_name} is already in the list.")
+                return
+
+        # Add the account
+        accounts.append({
+            "name": acct_name,
+            "eso_dir": d,
+            "api_key": "",  # Will be obtained on first registration
+        })
+        self.config["accounts"] = accounts
+        self.config["active_account"] = len(accounts) - 1
+        self._apply_account_to_config()
+        self._save_config()
+        self._refresh_account_list()
+        self._log(f"Added account: {acct_name}")
+
+        # Restart sync with new account
+        self.running = False
+        if self.sync_thread and self.sync_thread.is_alive():
+            self.sync_thread.join(timeout=3)
+        self.engine = None
+        self._set_status("Starting new account...", "#cc8800")
+        self.root.after(500, self._auto_start)
+
+    def _remove_account(self):
+        """Remove the currently selected account."""
+        accounts = self.config.get("accounts", [])
+        idx = self.account_combo.current()
+        if idx < 0 or idx >= len(accounts):
+            return
+        name = accounts[idx].get("name", "?")
+        if not messagebox.askyesno("Remove Account",
+                f"Remove {name} from the account list?\n\n"
+                "This only removes it from the desktop client.\n"
+                "Your server data and listings are not affected."):
+            return
+
+        accounts.pop(idx)
+        self.config["accounts"] = accounts
+        if len(accounts) == 0:
+            self.config["active_account"] = 0
+        else:
+            self.config["active_account"] = max(0, idx - 1)
+            self._apply_account_to_config()
+        self._save_config()
+        self._refresh_account_list()
+        self._log(f"Removed account: {name}")
+
+        # Restart if we still have accounts
+        self.running = False
+        if self.sync_thread and self.sync_thread.is_alive():
+            self.sync_thread.join(timeout=3)
+        self.engine = None
+        if accounts:
+            self.root.after(500, self._auto_start)
+        else:
+            self._set_status("No accounts configured", "#cc8800")
 
     def _change_eso_folder(self):
         """Let the user pick a new ESO directory."""
