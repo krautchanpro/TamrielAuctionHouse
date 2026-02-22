@@ -15,7 +15,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
-from client import SyncEngine, APIClient, SavedVarsManager, detect_eso_dir, load_config, save_config
+from client import SyncEngine, APIClient, SavedVarsManager, detect_eso_dir, load_config, save_config, safe_write_text
 
 APP_NAME = "Tamriel Auction House"
 SERVER_URL = "https://tamriel-ah.org"
@@ -81,8 +81,7 @@ class TAHClientGUI:
         }
 
     def _save_config(self):
-        with open(self._config_path(), "w") as f:
-            json.dump(self.config, f, indent=2)
+        safe_write_text(Path(self._config_path()), json.dumps(self.config, indent=2))
 
     # -----------------------------------------------------------------------
     #  UI — minimal, just status + log
@@ -450,6 +449,12 @@ class TAHClientGUI:
 
         self._log(f"ESO directory: {self.config['eso_dir']}")
 
+        # Warn about OneDrive
+        if "onedrive" in self.config["eso_dir"].lower():
+            self._log("⚠ ESO folder is inside OneDrive. This can cause sync "
+                       "issues. Consider pausing OneDrive or moving your ESO "
+                       "Documents folder outside OneDrive.")
+
         # 2. Detect player name from SavedVariables
         if not self.config.get("account_name"):
             self._log("Detecting player name...")
@@ -480,13 +485,26 @@ class TAHClientGUI:
         # 4. Register / authenticate
         try:
             self.engine.ensure_registered()
-            self.config["api_key"] = self.engine.config.get("api_key", "")
+            api_key = self.engine.config.get("api_key", "")
+            self.config["api_key"] = api_key
+            # Also save to the active account entry so it persists across restarts
+            accounts = self.config.get("accounts", [])
+            idx = self.config.get("active_account", 0)
+            if accounts and 0 <= idx < len(accounts):
+                accounts[idx]["api_key"] = api_key
             self._save_config()
             self._log("Authenticated!")
         except Exception as e:
-            self._log(f"Registration failed: {e}. Retrying in 30s...")
-            self._set_status("Auth failed — retrying", "#cc0000")
-            self.root.after(30000, self._auto_start)
+            err_str = str(e)
+            if "429" in err_str:
+                # Rate limited — back off longer (2 minutes)
+                self._log(f"Rate limited by server. Retrying in 2 minutes...")
+                self._set_status("Rate limited — waiting", "#cc8800")
+                self.root.after(120000, self._auto_start)
+            else:
+                self._log(f"Registration failed: {e}. Retrying in 30s...")
+                self._set_status("Auth failed — retrying", "#cc0000")
+                self.root.after(30000, self._auto_start)
             return
 
         # 5. Start sync loop

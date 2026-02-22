@@ -25,6 +25,7 @@ import os
 import platform
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -125,9 +126,86 @@ def load_config(config_path: Optional[str]) -> dict:
 
 def save_config(config: dict, config_path: str):
     """Save configuration to file."""
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+    safe_write_text(Path(config_path), json.dumps(config, indent=2))
     log.info("Saved config to %s", config_path)
+
+
+# ---------------------------------------------------------------------------
+#  OneDrive-Safe File I/O
+# ---------------------------------------------------------------------------
+# OneDrive (and similar cloud sync tools) can lock files during sync,
+# causing PermissionError or OSError on reads/writes. These helpers
+# retry with backoff and use atomic writes (temp file + rename) to
+# minimize the window for conflicts.
+
+MAX_IO_RETRIES = 5
+IO_RETRY_DELAY = 0.5  # seconds, doubles each retry
+
+def _is_onedrive_path(path: Path) -> bool:
+    """Check if a path is inside a OneDrive-synced folder."""
+    return "onedrive" in str(path).lower()
+
+def safe_read_bytes(path: Path) -> bytes:
+    """Read a file with retry on lock errors (OneDrive-safe)."""
+    for attempt in range(MAX_IO_RETRIES):
+        try:
+            return path.read_bytes()
+        except (PermissionError, OSError) as e:
+            if attempt < MAX_IO_RETRIES - 1:
+                delay = IO_RETRY_DELAY * (2 ** attempt)
+                log.debug("File locked (%s), retrying in %.1fs... [%s]", path.name, delay, e)
+                time.sleep(delay)
+            else:
+                log.warning("Could not read %s after %d attempts: %s", path.name, MAX_IO_RETRIES, e)
+                raise
+
+def safe_read_text(path: Path, encoding="utf-8") -> str:
+    """Read a text file with retry on lock errors (OneDrive-safe)."""
+    data = safe_read_bytes(path)
+    return data.decode(encoding, errors="replace")
+
+def safe_write_text(path: Path, content: str, encoding="utf-8"):
+    """Write a text file atomically with retry (OneDrive-safe).
+    Writes to a temp file first, then renames to avoid partial writes."""
+    for attempt in range(MAX_IO_RETRIES):
+        try:
+            # Write to temp file in the same directory, then rename
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(path.parent), suffix=".tmp", prefix=f".{path.stem}_")
+            try:
+                os.write(fd, content.encode(encoding))
+                os.close(fd)
+                fd = None
+                # Atomic rename (on Windows, need to remove target first)
+                if platform.system() == "Windows" and path.exists():
+                    for del_attempt in range(MAX_IO_RETRIES):
+                        try:
+                            path.unlink()
+                            break
+                        except (PermissionError, OSError):
+                            if del_attempt < MAX_IO_RETRIES - 1:
+                                time.sleep(IO_RETRY_DELAY * (2 ** del_attempt))
+                            else:
+                                raise
+                os.rename(tmp_path, str(path))
+                return
+            finally:
+                if fd is not None:
+                    os.close(fd)
+                # Clean up temp file if rename failed
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+        except (PermissionError, OSError) as e:
+            if attempt < MAX_IO_RETRIES - 1:
+                delay = IO_RETRY_DELAY * (2 ** attempt)
+                log.debug("Write locked (%s), retrying in %.1fs... [%s]", path.name, delay, e)
+                time.sleep(delay)
+            else:
+                log.warning("Could not write %s after %d attempts: %s", path.name, MAX_IO_RETRIES, e)
+                raise
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +220,12 @@ class SavedVarsManager:
         self.sv_name = sv_name
         self.sv_file = self.sv_dir / f"{sv_name}.lua"
         self._last_hash = None
+
+        # Warn about OneDrive paths
+        if _is_onedrive_path(self.sv_dir):
+            log.warning("⚠ ESO directory is inside OneDrive. File locking may "
+                        "cause issues. Consider moving ESO documents outside "
+                        "OneDrive, or pausing OneDrive sync while playing.")
 
         # Detect addon folder (live/AddOns/AuctionHouse/)
         self._addon_dir = None
@@ -165,7 +249,10 @@ class SavedVarsManager:
         """Check if the file has changed since last read."""
         if not self.sv_file.exists():
             return False
-        current_hash = hashlib.md5(self.sv_file.read_bytes()).hexdigest()
+        try:
+            current_hash = hashlib.md5(safe_read_bytes(self.sv_file)).hexdigest()
+        except (PermissionError, OSError):
+            return False  # Can't read — assume no change
         if current_hash != self._last_hash:
             return True
         return False
@@ -176,7 +263,7 @@ class SavedVarsManager:
             log.warning("SavedVariables file not found: %s", self.sv_file)
             return {}
 
-        content = self.sv_file.read_text(encoding="utf-8", errors="replace")
+        content = safe_read_text(self.sv_file)
         self._last_hash = hashlib.md5(content.encode()).hexdigest()
 
         return self._parse_lua_table(content)
@@ -348,7 +435,7 @@ class SavedVarsManager:
         )
 
         target = Path(self._addon_dir) / "AH_IncomingData.lua"
-        target.write_text(content, encoding="utf-8")
+        safe_write_text(target, content)
 
     def write_metadata(self, last_sync: int, sync_count: int = 0):
         """No-op: metadata is now written together with incoming data."""
