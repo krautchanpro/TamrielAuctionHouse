@@ -139,6 +139,16 @@ class TAHClientGUI:
         self.account_combo.bind("<<ComboboxSelected>>", self._on_account_switch)
         ttk.Button(acct_frame, text="Add Account", command=self._add_account).pack(side=tk.LEFT)
         ttk.Button(acct_frame, text="Remove", command=self._remove_account).pack(side=tk.LEFT, padx=(4, 0))
+
+        # Megaserver selector
+        tk.Label(acct_frame, text="  Server:", font=("Arial", 9)).pack(side=tk.LEFT)
+        self.megaserver_var = tk.StringVar(value=self.config.get("megaserver", "NA"))
+        self.megaserver_combo = ttk.Combobox(acct_frame, textvariable=self.megaserver_var,
+                                              state="readonly", width=5, font=("Arial", 9),
+                                              values=["NA", "EU", "PTS"])
+        self.megaserver_combo.pack(side=tk.LEFT, padx=(4, 0))
+        self.megaserver_combo.bind("<<ComboboxSelected>>", self._on_megaserver_change)
+
         self._refresh_account_list()
 
         # Status area
@@ -250,6 +260,8 @@ class TAHClientGUI:
             self.config["account_name"] = acct.get("name", "")
             self.config["eso_dir"] = acct.get("eso_dir", "")
             self.config["api_key"] = acct.get("api_key", "")
+            if acct.get("megaserver"):
+                self.config["megaserver"] = acct["megaserver"]
 
     def _on_account_switch(self, event=None):
         """Handle account dropdown selection change."""
@@ -262,6 +274,8 @@ class TAHClientGUI:
 
         self.config["active_account"] = idx
         self._apply_account_to_config()
+        # Update megaserver dropdown to match account's saved megaserver
+        self.megaserver_var.set(self.config.get("megaserver", "NA"))
         self._save_config()
         self._log(f"Switched to account: {accounts[idx].get('name', '?')}")
 
@@ -271,6 +285,37 @@ class TAHClientGUI:
             self.sync_thread.join(timeout=3)
         self.engine = None
         self._set_status("Switching account...", "#cc8800")
+        self.root.after(500, self._auto_start)
+
+    def _on_megaserver_change(self, event=None):
+        """Handle megaserver dropdown change — re-registers with correct server."""
+        new_ms = self.megaserver_var.get()
+        old_ms = self.config.get("megaserver", "NA")
+        if new_ms == old_ms:
+            return
+
+        self.config["megaserver"] = new_ms
+        # Also save to active account entry
+        accounts = self.config.get("accounts", [])
+        idx = self.config.get("active_account", 0)
+        if accounts and 0 <= idx < len(accounts):
+            accounts[idx]["megaserver"] = new_ms
+        self._save_config()
+        self._log(f"Megaserver changed to {new_ms}. Re-registering...")
+
+        # Need to re-register with the server so listings go to the right megaserver
+        # Clear API key to force re-registration
+        self.config["api_key"] = ""
+        if accounts and 0 <= idx < len(accounts):
+            accounts[idx]["api_key"] = ""
+        self._save_config()
+
+        # Restart sync
+        self.running = False
+        if self.sync_thread and self.sync_thread.is_alive():
+            self.sync_thread.join(timeout=3)
+        self.engine = None
+        self._set_status("Switching megaserver...", "#cc8800")
         self.root.after(500, self._auto_start)
 
     def _add_account(self):
@@ -319,11 +364,20 @@ class TAHClientGUI:
                     f"Account {acct_name} is already in the list.")
                 return
 
+        # Detect megaserver from path
+        ms = "NA"
+        d_lower = d.lower()
+        if "liveeu" in d_lower or "live_eu" in d_lower or "live-eu" in d_lower:
+            ms = "EU"
+        elif "pts" in d_lower:
+            ms = "PTS"
+
         # Add the account
         accounts.append({
             "name": acct_name,
             "eso_dir": d,
             "api_key": "",  # Will be obtained on first registration
+            "megaserver": ms,
         })
         self.config["accounts"] = accounts
         self.config["active_account"] = len(accounts) - 1
@@ -501,6 +555,21 @@ class TAHClientGUI:
             self._log("⚠ ESO folder is inside OneDrive. This can cause sync "
                        "issues. Consider pausing OneDrive or moving your ESO "
                        "Documents folder outside OneDrive.")
+            # Show popup once
+            if not self.config.get("_onedrive_warned"):
+                self.config["_onedrive_warned"] = True
+                self._save_config()
+                messagebox.showwarning("OneDrive Detected",
+                    "Your ESO folder is inside OneDrive:\n"
+                    f"{self.config['eso_dir']}\n\n"
+                    "OneDrive can lock files during sync, which may cause\n"
+                    "errors or lost data. To avoid issues:\n\n"
+                    "• Right-click OneDrive tray icon → Pause syncing\n"
+                    "  while playing ESO\n\n"
+                    "• Or move your Documents/Elder Scrolls Online folder\n"
+                    "  outside of OneDrive\n\n"
+                    "The client will still work, but you may see occasional\n"
+                    "sync delays if OneDrive locks a file.")
 
         # 2. Detect player name from SavedVariables
         if not self.config.get("account_name"):
@@ -515,7 +584,10 @@ class TAHClientGUI:
             return
 
         self._log(f"Player: {self.config['account_name']}")
-        self.player_var.set(f"Player: {self.config['account_name']}")
+        ms = self.config.get("megaserver", "NA")
+        self._log(f"Megaserver: {ms}")
+        self.player_var.set(f"Player: {self.config['account_name']} ({ms})")
+        self.megaserver_var.set(ms)
 
         # 3. Connect to server
         self._log(f"Connecting to {SERVER_URL}...")

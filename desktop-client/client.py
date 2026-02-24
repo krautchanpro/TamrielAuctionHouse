@@ -612,11 +612,12 @@ class SyncEngine:
     def _detect_megaserver(self) -> str:
         """Detect NA/EU from the ESO directory path."""
         eso_dir = self.config.get("eso_dir", "").lower()
-        if "liveeu" in eso_dir or "live_eu" in eso_dir:
+        if "liveeu" in eso_dir or "live_eu" in eso_dir or "live-eu" in eso_dir:
             return "EU"
         if "pts" in eso_dir:
             return "PTS"
-        return "NA"
+        # Use saved megaserver from config if available (user may have set it via GUI)
+        return self.config.get("megaserver", "NA")
 
     def _detect_player_name(self) -> Optional[str]:
         """Try to read the player name from SavedVariables."""
